@@ -1,7 +1,9 @@
 package main
 
 import (
+	d "elasticsearch_data_generator/datagenerator"
 	r "elasticsearch_data_generator/randomdataprovider"
+
 	"fmt"
 	"net/http"
 	"sync"
@@ -80,7 +82,13 @@ func batch(idx uint32, mg *sync.WaitGroup, str <-chan *string, flt <-chan *strin
 
 func post(mainIdx, batchIdx uint32, wg *sync.WaitGroup, str <-chan *string, flt <-chan *string) {
 	// respBody := ESResponse{}
-	var jsonStr = getBulkJson(str, flt, mainIdx)
+	details := d.DataDetails{
+		BulkSize:     bulkSize,
+		IndexName:    indexName,
+		NumberFields: numberFields,
+		StringFields: stringFields,
+	}
+	var jsonStr = d.GetBulkJson(str, flt, mainIdx, details)
 	fmt.Println("Message: ", string(jsonStr))
 
 	// req, _ := http.NewRequest("POST", bulkURL, bytes.NewBuffer(jsonStr))
@@ -110,55 +118,4 @@ func post(mainIdx, batchIdx uint32, wg *sync.WaitGroup, str <-chan *string, flt 
 	/* defer resp.Body.Close() */
 	wg.Done()
 
-}
-
-func getBulkJson(str <-chan *string, flt <-chan *string, indexNo uint32) []byte {
-	var request []byte
-	for i := uint32(1); i <= bulkSize; i++ {
-		jsonStr := genJson(str, flt, indexNo)
-		request = append(request, jsonStr...)
-	}
-	return request
-}
-
-func genJson(str <-chan *string, flt <-chan *string, indexNo uint32) []byte {
-	header := getHeader(indexNo)
-	content := getContent(str, flt)
-	newline := []byte("\n")
-
-	return append(append(append(header, newline...), content...), newline...)
-}
-
-func getHeader(indexNo uint32) []byte {
-	header := fmt.Sprintf(`{ "index" : { "_index" : "` + indexName + fmt.Sprint(indexNo) + `","_type": "fact"} }`)
-	return []byte(header)
-}
-
-func getContent(str <-chan *string, flt <-chan *string) []byte {
-	open, close := []byte("{ "), []byte("}")
-	garbageFields := getGarbage(str, flt)
-	return append(append(open, garbageFields...), close...)
-	// return append(append(open, knownFields...), close...)
-}
-
-func getGarbage(str <-chan *string, flt <-chan *string) []byte {
-	var response []byte
-	comma := []byte(",")
-
-	for i := uint32(1); i <= stringFields; i++ {
-		strValue := <-str
-		dimension := fmt.Sprintf(`"Dimension%d":"%s",`, i, *strValue)
-		response = append(response, []byte(dimension)...)
-	}
-
-	for i := uint32(1); i <= numberFields; i++ {
-		fltValue := <-flt
-		measure := fmt.Sprintf(`"Measure%d":%s`, i, *fltValue)
-		response = append(response, []byte(measure)...)
-		if i == numberFields {
-			break
-		}
-		response = append(response, comma...)
-	}
-	return response
 }
